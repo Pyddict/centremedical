@@ -19,7 +19,9 @@ FROM base AS runner
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
-RUN npm ci --omit=dev && npm cache clean --force
+# Réutilise les dépendances déjà téléchargées puis retire celles de dev
+COPY --from=deps /app/node_modules ./node_modules
+RUN npm prune --omit=dev && npm cache clean --force && npx prisma generate
 COPY next.config.mjs ./
 COPY public ./public
 COPY --from=builder /app/.next ./.next
