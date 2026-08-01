@@ -37,10 +37,22 @@ export async function createLeaveRequest(formData: FormData): Promise<void> {
     fail("La date de début doit être antérieure ou égale à la date de fin.");
   }
 
+  // La période elle-même est bornée : une saisie erronée (année mal tapée)
+  // fausserait durablement le calendrier de présence.
+  const calendarDays = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  if (calendarDays > 366) {
+    fail("La période demandée ne peut pas dépasser un an.");
+  }
+
   const daysRaw = text(formData, "daysCount");
   const days = daysRaw ? Number.parseFloat(daysRaw.replace(",", ".")) : Number.NaN;
-  if (!Number.isFinite(days) || days < 0.5 || days > 366) {
-    fail("Le nombre de jours doit être compris entre 0,5 et 366.");
+  if (!Number.isFinite(days) || days < 0.5) {
+    fail("Le nombre de jours doit être d'au moins 0,5.");
+  }
+  if (days > calendarDays) {
+    fail(
+      `Le nombre de jours (${days}) dépasse la durée de la période demandée (${calendarDays} jour${calendarDays > 1 ? "s" : ""}).`
+    );
   }
 
   await prisma.leaveRequest.create({

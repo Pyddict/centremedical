@@ -6,12 +6,17 @@ export function formatEuros(cents: number): string {
   });
 }
 
-/** "123,45" ou "123.45" → 12345 centimes (null si invalide). */
+/**
+ * "123,45" ou "123.45" → 12345 centimes (null si invalide).
+ * Le format est validé strictement : « 1.500 » (séparateur de milliers) ou
+ * « 12 € » sont refusés plutôt que silencieusement mal interprétés.
+ */
 export function parseEurosToCents(input: string | null | undefined): number | null {
   if (!input) return null;
-  const normalized = input.replace(/\s/g, "").replace(",", ".");
+  const normalized = input.replace(/[\s ]/g, "").replace(",", ".");
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
   const value = Number.parseFloat(normalized);
-  if (!Number.isFinite(value) || value < 0) return null;
+  if (!Number.isFinite(value)) return null;
   return Math.round(value * 100);
 }
 

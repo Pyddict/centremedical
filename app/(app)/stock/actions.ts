@@ -6,7 +6,10 @@ import { Role, StockOrderStatus, StockRequestStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { hasRole, requireUser } from "@/lib/session";
 import { parseEurosToCents } from "@/lib/format";
-import { saveUploadedFile, type StoredFile } from "@/lib/uploads";
+import { deleteStoredFile, saveUploadedFile, type StoredFile } from "@/lib/uploads";
+
+/** Levée quand l'état en base a changé entre la lecture et l'écriture. */
+class ConcurrentChangeError extends Error {}
 
 function errorUrl(path: string, message: string): string {
   return `${path}?error=${encodeURIComponent(message)}`;
@@ -89,27 +92,32 @@ export async function createOrder(formData: FormData): Promise<void> {
     redirect(errorUrl("/stock", "Veuillez cocher au moins une demande à commander."));
   }
 
-  const created = await prisma.$transaction(async (tx) => {
-    const pending = await tx.stockRequest.findMany({
-      where: { id: { in: requestIds }, status: StockRequestStatus.A_COMMANDER },
-      select: { id: true },
+  const created = await prisma
+    .$transaction(async (tx) => {
+      const order = await tx.stockOrder.create({
+        data: {
+          supplier: supplier || null,
+          reference: reference || null,
+          status: StockOrderStatus.COMMANDEE,
+          orderedById: user.id,
+        },
+      });
+      // Le filtre de statut fait office de verrou optimiste : si une demande a
+      // été annulée ou commandée entre-temps, le compte ne correspond plus et
+      // la transaction est annulée (commande comprise).
+      const updated = await tx.stockRequest.updateMany({
+        where: { id: { in: requestIds }, status: StockRequestStatus.A_COMMANDER },
+        data: { status: StockRequestStatus.COMMANDEE, orderId: order.id },
+      });
+      if (updated.count !== requestIds.length) {
+        throw new ConcurrentChangeError();
+      }
+      return order;
+    })
+    .catch((err: unknown) => {
+      if (err instanceof ConcurrentChangeError) return null;
+      throw err;
     });
-    if (pending.length !== requestIds.length) return null;
-
-    const order = await tx.stockOrder.create({
-      data: {
-        supplier: supplier || null,
-        reference: reference || null,
-        status: StockOrderStatus.COMMANDEE,
-        orderedById: user.id,
-      },
-    });
-    await tx.stockRequest.updateMany({
-      where: { id: { in: requestIds } },
-      data: { status: StockRequestStatus.COMMANDEE, orderId: order.id },
-    });
-    return order;
-  });
 
   if (!created) {
     redirect(
@@ -170,9 +178,11 @@ export async function receiveOrder(orderId: string, formData: FormData): Promise
     redirect(errorUrl(detailPath, uploadError));
   }
 
-  await prisma.$transaction([
-    prisma.stockOrder.update({
-      where: { id: orderId },
+  // Le statut attendu est remis dans le where : une réception concurrente ne
+  // doit pas être enregistrée deux fois.
+  const received = await prisma.$transaction(async (tx) => {
+    const updated = await tx.stockOrder.updateMany({
+      where: { id: orderId, status: StockOrderStatus.COMMANDEE },
       data: {
         status: StockOrderStatus.RECUE_A_PAYER,
         receivedAt: new Date(),
@@ -180,12 +190,20 @@ export async function receiveOrder(orderId: string, formData: FormData): Promise
         notes: notes || null,
         ...(stored ? { devisFileName: stored.fileName, devisPath: stored.storedPath } : {}),
       },
-    }),
-    prisma.stockRequest.updateMany({
+    });
+    if (updated.count !== 1) return false;
+    await tx.stockRequest.updateMany({
       where: { orderId },
       data: { status: StockRequestStatus.RECUE },
-    }),
-  ]);
+    });
+    return true;
+  });
+
+  if (!received) {
+    // Le devis fraîchement stocké n'est rattaché à rien : on le supprime.
+    if (stored) await deleteStoredFile(stored.storedPath);
+    redirect(errorUrl(detailPath, "Cette commande a déjà été réceptionnée entre-temps."));
+  }
 
   revalidatePath("/stock");
   revalidatePath(detailPath);
@@ -206,10 +224,13 @@ export async function markOrderPaid(orderId: string, _formData: FormData): Promi
     );
   }
 
-  await prisma.stockOrder.update({
-    where: { id: orderId },
+  const paid = await prisma.stockOrder.updateMany({
+    where: { id: orderId, status: StockOrderStatus.RECUE_A_PAYER },
     data: { status: StockOrderStatus.PAYEE, paidAt: new Date() },
   });
+  if (paid.count !== 1) {
+    redirect(errorUrl("/stock", "Cette commande a déjà été marquée comme payée."));
+  }
 
   revalidatePath("/stock");
   revalidatePath(`/stock/commandes/${orderId}`);

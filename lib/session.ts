@@ -19,6 +19,11 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
   const email = session?.user?.email?.toLowerCase().trim();
   if (!session || !email) return null;
 
+  // Le rattachement d'un compte Auth0 à un employé se fait par l'email : il faut
+  // donc que l'email ait été vérifié, sinon n'importe qui pourrait s'inscrire
+  // avec l'adresse d'un employé et récupérer son compte.
+  if (session.user.email_verified !== true) return null;
+
   let user = await prisma.user.findUnique({ where: { email } });
 
   if (!user) {
@@ -41,10 +46,15 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
   if (!user.active) return null;
 
   if (!user.auth0Sub && session.user.sub) {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { auth0Sub: session.user.sub },
-    });
+    try {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { auth0Sub: session.user.sub },
+      });
+    } catch {
+      // auth0Sub déjà rattaché à une autre fiche (email réattribué) : on
+      // n'empêche pas la connexion pour autant.
+    }
   }
 
   return user;

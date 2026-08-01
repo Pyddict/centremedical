@@ -55,10 +55,12 @@ public.
 3. Reporter *Domain*, *Client ID* et *Client Secret* dans le fichier `.env`.
 4. Générer la clé de session : `openssl rand -hex 32` → `AUTH0_SECRET`.
 
-> Astuce : dans Auth0, vous pouvez désactiver les inscriptions publiques
-> (Authentication → Database → *Disable Sign Ups*) et créer vous-même les comptes des
-> employés — l'application n'autorise de toute façon que les emails présents dans sa
-> table employés.
+> **Important — sécurité.** Désactivez les inscriptions publiques dans Auth0
+> (Authentication → Database → votre connexion → *Disable Sign Ups*) et créez vous-même
+> les comptes des employés. Le rattachement d'un compte Auth0 à une fiche employé se fait
+> par l'adresse email : l'application refuse les emails non vérifiés
+> (`email_verified`), mais des inscriptions ouvertes resteraient une surface d'attaque
+> inutile pour des données RH.
 
 ## Démarrage en développement
 

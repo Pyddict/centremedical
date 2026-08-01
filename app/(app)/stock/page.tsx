@@ -145,6 +145,12 @@ export default async function StockPage({
           <EmptyState message="Aucune demande en attente de commande." />
         ) : canManage ? (
           <form action={createOrder}>
+            {/*
+              Capte la soumission implicite (touche Entrée dans « Fournisseur » ou
+              « Référence ») : sans ce bouton placé en premier, le navigateur
+              déclencherait le bouton « Annuler » de la première ligne du tableau.
+            */}
+            <button type="submit" tabIndex={-1} aria-hidden className="hidden" />
             <Table headers={toOrderHeaders}>{toOrderRows}</Table>
             <p className="mt-4 text-xs text-slate-400">
               Cochez les demandes à inclure, renseignez si besoin le fournisseur et la référence,
@@ -189,7 +195,8 @@ export default async function StockPage({
                     <Badge color={meta.color}>{meta.label}</Badge>
                   </Td>
                   <Td>
-                    {order.devisPath ? (
+                    {/* Le téléchargement du devis est réservé à l'assistante et aux admins. */}
+                    {order.devisPath && canManage ? (
                       <a
                         href={`/api/stock/orders/${order.id}/devis`}
                         className="font-medium text-teal-700 underline-offset-2 hover:underline"

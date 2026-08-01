@@ -105,7 +105,8 @@ export async function updateEmployee(id: string, formData: FormData): Promise<vo
     fail(editPath, "Veuillez renseigner une adresse email valide.");
   }
 
-  if (email !== employee.email) {
+  const emailChanged = email !== employee.email;
+  if (emailChanged) {
     const other = await prisma.user.findUnique({ where: { email } });
     if (other && other.id !== id) {
       fail(editPath, "Un autre employé utilise déjà cet email.");
@@ -130,6 +131,9 @@ export async function updateEmployee(id: string, formData: FormData): Promise<vo
         iban: text(formData, "iban"),
         emergencyContact: text(formData, "emergencyContact"),
         notes: text(formData, "notes"),
+        // Changer l'email de connexion détache le compte Auth0 précédent :
+        // il sera rattaché à nouveau à la prochaine connexion.
+        ...(emailChanged ? { auth0Sub: null } : {}),
       },
     });
   } catch {

@@ -249,6 +249,12 @@ export default async function CongesPage({
                     </Td>
                     <Td>
                       <form className="flex flex-wrap items-center gap-2">
+                        {/*
+                          Bouton par défaut désactivé : la touche Entrée dans le champ
+                          commentaire ne doit pas valider la demande à l'insu de
+                          l'administrateur — la décision passe par un clic explicite.
+                        */}
+                        <button type="submit" disabled hidden aria-hidden tabIndex={-1} />
                         <Input
                           name="comment"
                           placeholder="Commentaire (optionnel)"
