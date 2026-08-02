@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----- Utilisateurs & rôles -----
+
+enum Role {
+  ADMIN
+  MEDECIN
+  ASSISTANTE
+}
+
+model User {
+  id       String  @id @default(cuid())
+  auth0Sub String? @unique
+  email    String  @unique
+  active   Boolean @default(true)
+  roles    Role[]  @default([])
+
+  // Fiche administrative
+  firstName            String
+  lastName             String
+  birthDate            DateTime?
+  address              String?
+  phone                String?
+  socialSecurityNumber String?
+  jobTitle             String?
+  contractType         String?
+  hireDate             DateTime?
+  iban                 String?
+  emergencyContact     String?
+  notes                String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents     Document[]
+  leaveRequests LeaveRequest[] @relation("LeaveRequester")
+  decidedLeaves LeaveRequest[] @relation("LeaveDecider")
+  leaveBalances LeaveBalance[]
+  absences      Absence[]
+  stockRequests StockRequest[]
+  stockOrders   StockOrder[]   @relation("OrderedBy")
+}
+
+// ----- Documents administratifs (contrat, carte d'identité…) -----
+
+enum DocumentType {
+  CONTRAT_EMBAUCHE
+  CARTE_IDENTITE
+  DIPLOME
+  RIB
+  AUTRE
+}
+
+model Document {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       DocumentType @default(AUTRE)
+  label      String
+  fileName   String
+  storedPath String
+  mimeType   String
+  size       Int
+  createdAt  DateTime     @default(now())
+
+  @@index([userId])
+}
+
+// ----- Congés -----
+
+enum LeaveStatus {
+  EN_ATTENTE
+  VALIDEE
+  REFUSEE
+  ANNULEE
+}
+
+model LeaveRequest {
+  id              String      @id @default(cuid())
+  requesterId     String
+  requester       User        @relation("LeaveRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  startDate       DateTime
+  endDate         DateTime
+  daysCount       Float
+  reason          String?
+  status          LeaveStatus @default(EN_ATTENTE)
+  decidedById     String?
+  decidedBy       User?       @relation("LeaveDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt       DateTime?
+  decisionComment String?
+  createdAt       DateTime    @default(now())
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([startDate, endDate])
+}
+
+model LeaveBalance {
+  id            String @id @default(cuid())
+  userId        String
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year          Int
+  allocatedDays Float  @default(25)
+
+  @@unique([userId, year])
+}
+
+// ----- Absences (vacances des médecins, présence au cabinet) -----
+
+enum AbsenceType {
+  VACANCES
+  FORMATION
+  CONGRES
+  MALADIE
+  AUTRE
+}
+
+model Absence {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate DateTime
+  endDate   DateTime
+  type      AbsenceType @default(VACANCES)
+  note      String?
+  createdAt DateTime    @default(now())
+
+  @@index([userId])
+  @@index([startDate, endDate])
+}
+
+// ----- Stock : demandes des médecins & commandes de l'assistante -----
+
+enum StockRequestStatus {
+  A_COMMANDER
+  COMMANDEE
+  RECUE
+  ANNULEE
+}
+
+enum StockOrderStatus {
+  COMMANDEE
+  RECUE_A_PAYER
+  PAYEE
+}
+
+model StockRequest {
+  id          String             @id @default(cuid())
+  requesterId String
+  requester   User               @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  itemName    String
+  quantity    Int                @default(1)
+  details     String?
+  urgent      Boolean            @default(false)
+  status      StockRequestStatus @default(A_COMMANDER)
+  orderId     String?
+  order       StockOrder?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt   DateTime           @default(now())
+
+  @@index([status])
+  @@index([requesterId])
+}
+
+model StockOrder {
+  id            String           @id @default(cuid())
+  reference     String?
+  supplier      String?
+  status        StockOrderStatus @default(COMMANDEE)
+  orderedById   String?
+  orderedBy     User?            @relation("OrderedBy", fields: [orderedById], references: [id], onDelete: SetNull)
+  orderedAt     DateTime         @default(now())
+  receivedAt    DateTime?
+  paidAt        DateTime?
+  amountCents   Int?
+  devisFileName String?
+  devisPath     String?
+  notes         String?
+
+  requests StockRequest[]
+
+  @@index([status])
+}
+
+// ----- Coûts récurrents du cabinet -----
+
+enum CostCategory {
+  NETTOYAGE
+  PAIE
+  COMPTABILITE
+  INFORMATIQUE
+  LOYER
+  ASSURANCE
+  FOURNITURES
+  AUTRE
+}
+
+enum CostFrequency {
+  MENSUEL
+  TRIMESTRIEL
+  SEMESTRIEL
+  ANNUEL
+}
+
+model RecurringCost {
+  id          String        @id @default(cuid())
+  label       String
+  category    CostCategory  @default(AUTRE)
+  provider    String?
+  amountCents Int
+  frequency   CostFrequency @default(MENSUEL)
+  startDate   DateTime?
+  active      Boolean       @default(true)
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([active])
+}
