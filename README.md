@@ -85,6 +85,30 @@ docker compose up -d --build
 Le conteneur applique automatiquement les migrations (`prisma migrate deploy`) au
 démarrage, puis lance l'application sur le port `APP_PORT` (3000 par défaut).
 
+### Changer le port
+
+Si le port 3000 est déjà occupé sur le serveur, il suffit de changer `APP_PORT` dans le
+fichier `.env` :
+
+```bash
+APP_PORT=8080
+```
+
+puis `docker compose up -d`. Seul le port côté machine hôte change ; le conteneur
+continue d'écouter sur 3000 en interne, il n'y a rien d'autre à modifier dans le projet.
+PostgreSQL n'est pas exposé sur l'hôte, il ne peut donc pas entrer en conflit.
+
+Deux points à aligner sur le nouveau port **si vous accédez à l'application sans reverse
+proxy** (en tapant `http://mon-serveur:8080` dans le navigateur) :
+
+- `APP_BASE_URL=http://mon-serveur:8080` dans le `.env` ;
+- les *Allowed Callback URLs* (`http://mon-serveur:8080/auth/callback`) et *Allowed
+  Logout URLs* (`http://mon-serveur:8080`) de votre application Auth0.
+
+Avec un reverse proxy en HTTPS, `APP_BASE_URL` et les URLs Auth0 restent ceux de votre
+domaine public : seule la cible du proxy suit le nouveau port
+(`reverse_proxy localhost:8080`).
+
 En production, placez un reverse proxy (Caddy, Nginx, Traefik…) devant l'application
 pour gérer le HTTPS — indispensable pour Auth0 et pour la confidentialité des données.
 Exemple avec Caddy : `rh.moncentre.fr { reverse_proxy localhost:3000 }`.
@@ -118,7 +142,12 @@ app/
 components/         composants UI partagés
 lib/                auth0, prisma, session/rôles, dates, formats, uploads
 prisma/             schéma, migrations, seed
+scripts/            outils de build (préparation du CLI Prisma pour l'image Docker)
 ```
+
+L'image Docker utilise la sortie « standalone » de Next.js et n'embarque que les
+dépendances réellement nécessaires à l'exécution : elle pèse environ 570 Mo au lieu de
+1,5 Go avec un `node_modules` complet.
 
 ## Pistes d'évolution (à discuter)
 
